@@ -1,0 +1,8 @@
+[package]
+name = "pm"
+type = "bin"
+authors = ["BPS"]
+compiler_version = "1.0.0" 
+
+[dependencies]
+jwt = { tag = "main", git = "https://github.com/zkemail/noir-jwt" }
