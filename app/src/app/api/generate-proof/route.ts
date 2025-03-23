@@ -31,7 +31,6 @@ async function verifyGoogleToken(token: string) {
 async function compileIfNeeded(circuitPath: string) {
   const pmJsonPath = path.join(circuitPath, 'target', 'pm.json');
 
-  // Check if pm.json exists
   if (!fs.existsSync(pmJsonPath)) {
     console.log('pm.json not found, compiling circuit...');
     const compileCommand = `cd ${circuitPath} && nargo compile`;
@@ -45,7 +44,6 @@ async function compileIfNeeded(circuitPath: string) {
 async function generateVkIfNeeded(circuitPath: string) {
   const vkPath = path.join(circuitPath, 'target', 'vk');
 
-  // Check if vk file exists
   if (!fs.existsSync(vkPath)) {
     console.log('vk file not found, generating key...');
     const keyCommand = `cd ${circuitPath} && bb write_vk -b ./target/pm.json -o ./target/vk`;
@@ -65,26 +63,24 @@ function generateTomlContent(data: any): string {
   if (data.domain) {
     content += `domain = { storage = [${data.domain.storage.join(
       ', '
-    )}], len = ${data.domain.len} }\n`;
+    )}], len = ${data.domain.len} }\n\n`;
   }
 
   // Handle JWT data if present
   if (data.partial_data) {
     content += `partial_data = { storage = [${data.partial_data.storage.join(
       ', '
-    )}], len = ${data.partial_data.len} }\n`;
-    content += `partial_hash = ${formatArray(data.partial_hash)}\n`;
-    content += `full_data_length = ${data.full_data_length}\n`;
-    content += `base64_decode_offset = ${data.base64_decode_offset}\n`;
+    )}], len = ${data.partial_data.len} }\n\n`;
+    content += `partial_hash = ${formatArray(data.partial_hash)}\n\n`;
+    content += `full_data_length = ${data.full_data_length}\n\n`;
+    content += `base64_decode_offset = ${data.base64_decode_offset}\n\n`;
     content += `jwt_pubkey_modulus_limbs = ${formatArray(
       data.jwt_pubkey_modulus_limbs
-    )}\n`;
+    )}\n\n`;
     content += `jwt_pubkey_redc_params_limbs = ${formatArray(
       data.jwt_pubkey_redc_params_limbs
-    )}\n`;
-    content += `jwt_signature_limbs = ${formatArray(
-      data.jwt_signature_limbs
-    )}\n`;
+    )}\n\n`;
+    content += `jwt_signature_limbs = ${formatArray(data.jwt_signature_limbs)}`;
   }
 
   return content;
@@ -93,7 +89,7 @@ function generateTomlContent(data: any): string {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { id_token, email } = body;
+    const { id_token, email, type } = body;
 
     console.log('Starting proof generation for email:', email);
 
@@ -101,7 +97,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing email' }, { status: 400 });
     }
 
-    // Extract domain from email
     const domain = email.split('@')[1];
     console.log('Validating domain:', domain);
 
@@ -111,9 +106,38 @@ export async function POST(request: Request) {
     try {
       let proverData;
 
-      if (id_token) {
-        // For Google login, generate JWT inputs first
-        console.log('Generating JWT inputs...');
+      if (type === 'domain') {
+        // For email login, only include domain verification data
+        console.log('Generating domain-only verification data...');
+        proverData = {
+          domain: {
+            storage: Array.from(new TextEncoder().encode(domain))
+              .concat(new Array(64).fill(0))
+              .slice(0, 64),
+            len: domain.length,
+          },
+          // Add dummy values for JWT fields
+          partial_data: {
+            storage: new Array(1200).fill(0),
+            len: 0,
+          },
+          partial_hash: new Array(32).fill(0),
+          full_data_length: 0,
+          base64_decode_offset: 0,
+          jwt_pubkey_modulus_limbs: new Array(32).fill(0),
+          jwt_pubkey_redc_params_limbs: new Array(32).fill(0),
+          jwt_signature_limbs: new Array(32).fill(0),
+        };
+      } else {
+        // For Google login, verify JWT
+        if (!id_token) {
+          return NextResponse.json(
+            { error: 'Missing id_token for JWT verification' },
+            { status: 400 }
+          );
+        }
+
+        console.log('Generating JWT verification data...');
         const [headerB64] = id_token.split('.');
         const header = JSON.parse(Buffer.from(headerB64, 'base64').toString());
         const pubkey = await getGooglePublicKey(header.kid);
@@ -145,16 +169,6 @@ export async function POST(request: Request) {
             len: domain.length,
           },
         };
-      } else {
-        // For email login, only include domain verification data
-        proverData = {
-          domain: {
-            storage: Array.from(new TextEncoder().encode(domain))
-              .concat(new Array(64).fill(0))
-              .slice(0, 64),
-            len: domain.length,
-          },
-        };
       }
 
       console.log('Writing Prover.toml...');
@@ -164,13 +178,14 @@ export async function POST(request: Request) {
       // Compile if needed
       await compileIfNeeded(circuitPath);
 
-      // Generate and verify proof
+      // Generate proof
       console.log('Executing proof generation...');
       await execAsync(
         `cd ${circuitPath} && bb prove -b ./target/pm.json -w ./target/pm.gz -o ./target/proof`
       );
       console.log('Proof generated successfully');
 
+      // Generate verification key if needed and verify proof
       await generateVkIfNeeded(circuitPath);
 
       console.log('Verifying proof...');
@@ -179,23 +194,39 @@ export async function POST(request: Request) {
       );
       console.log('Proof verified successfully');
 
-      // If we reach here, the proof was verified successfully
-      // Check if domain is in our list of expert domains
+      // Determine expert status
       const expertDomains = ['gmail.com', 'edu']; // Add your expert domains here
       const isExpertDomain = expertDomains.some((expertDomain) =>
         domain.endsWith(expertDomain)
       );
 
-      return NextResponse.json({
-        isExpert: isExpertDomain,
-        verifiedDomain: domain,
-      });
+      // For domain verification, return verified: true
+      if (type === 'domain') {
+        return NextResponse.json({
+          verified: true,
+          verifiedDomain: domain,
+          isExpert: false, // domain-only verification cannot grant expert status
+          message: 'Domain verification successful',
+        });
+      } else {
+        // For JWT verification
+        return NextResponse.json({
+          verified: true,
+          verifiedDomain: domain,
+          isExpert: isExpertDomain,
+          message: isExpertDomain
+            ? 'JWT verification successful - Expert status granted'
+            : 'JWT verification successful',
+        });
+      }
     } catch (error) {
       console.error('Error in proof generation/verification:', error);
       return NextResponse.json(
         {
+          verified: false,
           isExpert: false,
           error: 'Proof verification failed',
+          details: error instanceof Error ? error.message : 'Unknown error',
         },
         { status: 400 }
       );
@@ -204,8 +235,10 @@ export async function POST(request: Request) {
     console.error('Error in generate-proof route:', error);
     return NextResponse.json(
       {
+        verified: false,
         isExpert: false,
         error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     );

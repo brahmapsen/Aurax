@@ -70,6 +70,8 @@ export default function Home() {
       status: 'open',
     },
   ]);
+  const [zkpVerifying, setZkpVerifying] = useState(false);
+  const [zkpVerified, setZkpVerified] = useState(false);
 
   useEffect(() => {
     const initializeGoogle = () => {
@@ -147,34 +149,14 @@ export default function Home() {
       console.log('Decoding JWT...');
       const id_token = response.credential;
       const decoded: any = jwtDecode(id_token);
-      console.log('JWT decoded successfully:', {
-        email: decoded.email,
-        name: decoded.name,
-      });
 
-      // Verify expert status through ZKP
-      const proofResponse = await fetch('/api/generate-proof', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id_token: id_token,
-          email: decoded.email,
-        }),
-      });
-
-      if (!proofResponse.ok) {
-        throw new Error('Failed to verify expert status');
-      }
-
-      const { isExpert, verifiedDomain } = await proofResponse.json();
-      console.log('Google login verification:', { isExpert, verifiedDomain });
-
+      // Set basic user info without expert status
       const userData = {
         email: decoded.email,
         name: decoded.name,
         loginMethod: 'google' as const,
         id_token: id_token,
-        isExpert,
+        isExpert: false, // Default to false until ZKP verification
         answers: [],
       };
 
@@ -185,33 +167,18 @@ export default function Home() {
       alert('Login failed. Please try again.');
     } finally {
       setIsLoading(false);
-      console.log('Login process completed');
     }
   };
 
   const handleEmailLogin = async (email: string) => {
     try {
       setIsLoading(true);
-
-      // Verify expert status through ZKP
-      const proofResponse = await fetch('/api/generate-proof', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-
-      if (!proofResponse.ok) {
-        throw new Error('Failed to verify email');
-      }
-
-      const { isExpert, verifiedDomain } = await proofResponse.json();
-      console.log('Email login verification:', { isExpert, verifiedDomain });
-
+      // Simple email login without verification
       setUser({
         email,
         name: email.split('@')[0],
         loginMethod: 'email',
-        isExpert, // Use the ZKP verification result
+        isExpert: false,
         answers: [],
       });
     } catch (error) {
@@ -313,6 +280,46 @@ export default function Home() {
     setShowCreateForm(false);
   };
 
+  const handleZKPVerification = async () => {
+    if (!user) {
+      alert('Please login first');
+      return;
+    }
+
+    try {
+      setZkpVerifying(true);
+      const response = await fetch('/api/generate-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          id_token: user.id_token,
+          type: user.loginMethod === 'google' ? 'jwt' : 'domain',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.verified) {
+        setZkpVerified(true);
+        if (result.isExpert) {
+          setUser((prev) => (prev ? { ...prev, isExpert: true } : prev));
+        }
+        alert(result.message || 'Verification successful!');
+      } else {
+        alert(result.error || 'Verification failed');
+      }
+    } catch (error) {
+      console.error('ZKP Verification failed:', error);
+      alert(
+        'Verification failed: ' +
+          (error instanceof Error ? error.message : 'Unknown error')
+      );
+    } finally {
+      setZkpVerifying(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header user={user} onLogout={handleLogout} />
@@ -336,18 +343,11 @@ export default function Home() {
         )}
 
         {!user && (
-          <div className="mb-6 p-6 bg-white rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Sign In</h2>
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="mb-2">Sign in with Google (Expert Access):</p>
-                <div
-                  id="google-btn"
-                  className="w-full flex justify-center"
-                ></div>
-              </div>
-              <div>
-                <p className="mb-2">Or sign in with email:</p>
+          <div className="mb-6 p-3 bg-white rounded-lg shadow max-w-2xl">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-bold whitespace-nowrap">eMail Sign In</h2>
+              <div className="flex items-center gap-4">
+                <div id="google-btn"></div>
                 <LoginForm onLogin={handleEmailLogin} />
               </div>
             </div>
@@ -356,12 +356,37 @@ export default function Home() {
 
         {user && (
           <div className="mb-6 p-4 bg-white rounded-lg shadow">
-            <p>Welcome, {user.name}</p>
-            <p className="text-sm text-gray-600">
-              {user.loginMethod === 'google'
-                ? '🔒 Expert status will be verified with Zero Knowledge Proof'
-                : '⚠️ Non-expert access'}
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-lg font-semibold">Welcome, {user.name}</p>
+                <p className="text-sm text-gray-600">
+                  Status: {user.isExpert ? 'Expert' : 'Regular User'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Login method: {user.loginMethod}
+                </p>
+              </div>
+              <button
+                onClick={handleZKPVerification}
+                disabled={isLoading}
+                className={`px-4 py-2 rounded ${
+                  isLoading
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                }`}
+              >
+                {isLoading
+                  ? 'Verifying...'
+                  : user.loginMethod === 'google'
+                  ? 'Verify JWT with ZKP'
+                  : 'Verify Domain with ZKP'}
+              </button>
+            </div>
+            {user.isExpert && (
+              <div className="mt-2 p-2 bg-green-50 text-green-700 rounded">
+                ✓ Verified as Expert
+              </div>
+            )}
           </div>
         )}
 
