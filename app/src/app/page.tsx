@@ -6,6 +6,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import PredictionCard from './components/PredictionCard';
 import LoginForm from './components/LoginForm';
+import CreateMarketForm from './components/CreateMarketForm';
 
 const GOOGLE_CLIENT_ID =
   '966100421808-9fcdcovoaq2866o82pglo1v8f2u4q9n0.apps.googleusercontent.com';
@@ -34,6 +35,14 @@ interface VoteState {
   [questionId: string]: VoteCounts;
 }
 
+interface Prediction {
+  id: string;
+  question: string;
+  description: string;
+  endDate: string;
+  status: 'open' | 'closed';
+}
+
 export default function Home() {
   const [user, setUser] = useState<UserData | null>(null);
   const [votes, setVotes] = useState<VoteState>({
@@ -41,6 +50,26 @@ export default function Home() {
     '2': { yes: 0, no: 0 },
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [predictions, setPredictions] = useState<Prediction[]>([
+    {
+      id: '1',
+      question: 'Will SpaceX reach Mars by 2025?',
+      description:
+        'This prediction is about SpaceX successfully landing a crewed mission on Mars by the end of 2025.',
+      endDate: '2025-12-31',
+      status: 'open',
+    },
+    {
+      id: '2',
+      question:
+        'Will quantum computers achieve quantum supremacy in cryptography by 2024?',
+      description:
+        'This prediction is about quantum computers demonstrating clear superiority over classical computers in breaking current cryptographic systems.',
+      endDate: '2024-12-31',
+      status: 'open',
+    },
+  ]);
 
   useEffect(() => {
     const initializeGoogle = () => {
@@ -252,23 +281,37 @@ export default function Home() {
     }
   };
 
-  const predictions = [
-    {
-      id: '1',
-      question: 'Will global temperatures rise by more than 1.5°C by 2030?',
-      description:
-        'Based on current climate models and trends, will global average temperatures exceed the 1.5°C threshold?',
-      endDate: 'December 31, 2024',
-    },
-    {
-      id: '2',
-      question:
-        'Will quantum computers achieve practical quantum advantage by 2025?',
-      description:
-        'Will a quantum computer solve a practical problem faster than classical computers?',
-      endDate: 'December 31, 2024',
-    },
-  ];
+  const handleMarketStatusChange = (
+    marketId: string,
+    status: 'open' | 'closed'
+  ) => {
+    setPredictions(
+      predictions.map((prediction) =>
+        prediction.id === marketId ? { ...prediction, status } : prediction
+      )
+    );
+  };
+
+  const handleCreateMarket = ({
+    question,
+    description,
+  }: {
+    question: string;
+    description: string;
+  }) => {
+    const newMarket = {
+      id: (predictions.length + 1).toString(),
+      question,
+      description,
+      endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0],
+      status: 'open' as const,
+    };
+
+    setPredictions([...predictions, newMarket]);
+    setShowCreateForm(false);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -322,20 +365,46 @@ export default function Home() {
           </div>
         )}
 
-        <h1 className="text-2xl font-bold mb-6">Expert Predictions</h1>
+        <div className="max-w-4xl mx-auto">
+          {/* Add Create Market button */}
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl font-bold">Expert Prediction Market</h1>
+            {user?.isExpert && (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                Create New Market
+              </button>
+            )}
+          </div>
 
-        <div className="space-y-6">
-          {predictions.map((prediction) => (
-            <PredictionCard
-              key={prediction.id}
-              question={prediction.question}
-              description={prediction.description}
-              endDate={prediction.endDate}
-              onVote={(answer) => handleVote(prediction.id, answer)}
-              voteCounts={votes[prediction.id]}
-              isExpert={Boolean(user?.isExpert)}
+          {/* Show create form modal */}
+          {showCreateForm && (
+            <CreateMarketForm
+              onSubmit={handleCreateMarket}
+              onCancel={() => setShowCreateForm(false)}
             />
-          ))}
+          )}
+
+          {/* Predictions section */}
+          <div className="space-y-6">
+            {predictions.map((prediction) => (
+              <PredictionCard
+                key={prediction.id}
+                question={prediction.question}
+                description={prediction.description}
+                endDate={prediction.endDate}
+                status={prediction.status}
+                onVote={(answer) => handleVote(prediction.id, answer)}
+                onStatusChange={(status) =>
+                  handleMarketStatusChange(prediction.id, status)
+                }
+                voteCounts={votes[prediction.id] || { yes: 0, no: 0 }}
+                isExpert={user?.isExpert ?? false}
+              />
+            ))}
+          </div>
         </div>
       </main>
 
