@@ -10,6 +10,22 @@ const GOOGLE_CLIENT_ID =
 
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+interface BoundedVec {
+  storage: number[];
+  len: number;
+}
+
+interface ProverData {
+  domain?: BoundedVec;
+  partial_data?: BoundedVec;
+  partial_hash?: number[];
+  full_data_length?: number;
+  base64_decode_offset?: number;
+  jwt_pubkey_modulus_limbs?: number[];
+  jwt_pubkey_redc_params_limbs?: number[];
+  jwt_signature_limbs?: number[];
+}
+
 async function getGooglePublicKey(kid: string) {
   const response = await axios.get(
     'https://www.googleapis.com/oauth2/v3/certs'
@@ -111,7 +127,7 @@ export async function POST(request: Request) {
     const filePath = path.join(process.cwd(), 'public', 'Prover.toml');
     console.log('Creating Prover.toml at:', filePath);
 
-    const tomlContent = Object.entries(proverData)
+    const tomlContent = Object.entries(proverData as ProverData)
       .map(([key, value]) => {
         if (Array.isArray(value)) {
           if (key.includes('limbs')) {
@@ -123,11 +139,13 @@ export async function POST(request: Request) {
           value &&
           typeof value === 'object' &&
           'storage' in value &&
-          'len' in value
+          'len' in value &&
+          Array.isArray((value as BoundedVec).storage)
         ) {
-          return `${key} = { storage = [${value.storage.join(', ')}], len = ${
-            value.len
-          } }`;
+          const boundedVec = value as BoundedVec;
+          return `${key} = { storage = [${boundedVec.storage.join(
+            ', '
+          )}], len = ${boundedVec.len} }`;
         }
         return `${key} = ${value}`;
       })
