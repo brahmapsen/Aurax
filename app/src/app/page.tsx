@@ -73,9 +73,9 @@ export default function Home() {
   const [zkpVerifying, setZkpVerifying] = useState(false);
   const [zkpVerified, setZkpVerified] = useState(false);
 
-  useEffect(() => {
-    const initializeGoogle = () => {
-      console.log('Initializing Google Sign-In...');
+  const initializeGoogleButton = () => {
+    console.log('Initializing Google Sign-In...');
+    if (window.google?.accounts) {
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: handleCredentialResponse,
@@ -94,24 +94,29 @@ export default function Home() {
           shape: 'rectangular',
         }
       );
+    }
+  };
+
+  useEffect(() => {
+    const loadGoogleScript = () => {
+      if (!window.google?.accounts) {
+        console.log('Loading Google Identity Services script...');
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          console.log('Script loaded, initializing...');
+          initializeGoogleButton();
+        };
+        document.body.appendChild(script);
+      } else {
+        console.log('Google Identity Services already loaded');
+        initializeGoogleButton();
+      }
     };
 
-    // Load the Google Identity Services script
-    if (!window.google?.accounts) {
-      console.log('Loading Google Identity Services script...');
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        console.log('Script loaded, initializing...');
-        initializeGoogle();
-      };
-      document.body.appendChild(script);
-    } else {
-      console.log('Google Identity Services already loaded');
-      initializeGoogle();
-    }
+    loadGoogleScript();
 
     return () => {
       // Cleanup
@@ -191,12 +196,16 @@ export default function Home() {
 
   const handleLogout = () => {
     setUser(null);
+    setZkpVerified(false);
     setVotes({
       '1': { yes: 0, no: 0 },
       '2': { yes: 0, no: 0 },
     });
     if (window.google?.accounts) {
       window.google.accounts.id.disableAutoSelect();
+      setTimeout(() => {
+        initializeGoogleButton();
+      }, 100);
     }
   };
 
@@ -325,9 +334,8 @@ export default function Home() {
       <Header user={user} onLogout={handleLogout} />
 
       <main className="flex-grow container mx-auto px-4 py-8">
-        {/* Add debug info */}
         {process.env.NODE_ENV === 'development' && (
-          <div className="fixed top-0 right-0 bg-black text-white p-2 text-xs">
+          <div className="fixed top-40 right-4 bg-black bg-opacity-75 text-white p-2 text-xs rounded z-50">
             Loading: {isLoading ? 'true' : 'false'}
             <br />
             User: {user ? user.email : 'none'}
@@ -345,7 +353,9 @@ export default function Home() {
         {!user && (
           <div className="mb-6 p-3 bg-white rounded-lg shadow max-w-2xl">
             <div className="flex items-center gap-4">
-              <h2 className="text-xl font-bold whitespace-nowrap">eMail Sign In</h2>
+              <h2 className="text-xl font-bold whitespace-nowrap">
+                eMail Sign In
+              </h2>
               <div className="flex items-center gap-4">
                 <div id="google-btn"></div>
                 <LoginForm onLogin={handleEmailLogin} />
@@ -355,38 +365,34 @@ export default function Home() {
         )}
 
         {user && (
-          <div className="mb-6 p-4 bg-white rounded-lg shadow">
+          <div className="mb-6 p-3 bg-white rounded-lg shadow">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-lg font-semibold">Welcome, {user.name}</p>
-                <p className="text-sm text-gray-600">
-                  Status: {user.isExpert ? 'Expert' : 'Regular User'}
-                </p>
-                <p className="text-xs text-gray-500">
-                  Login method: {user.loginMethod}
-                </p>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">
+                  Logged in as: {user.email}
+                  {user.isExpert && ' (Expert)'}
+                </span>
               </div>
-              <button
-                onClick={handleZKPVerification}
-                disabled={isLoading}
-                className={`px-4 py-2 rounded ${
-                  isLoading
-                    ? 'bg-gray-300 cursor-not-allowed'
-                    : 'bg-blue-500 hover:bg-blue-600 text-white'
-                }`}
-              >
-                {isLoading
-                  ? 'Verifying...'
-                  : user.loginMethod === 'google'
-                  ? 'Verify JWT with ZKP'
-                  : 'Verify Domain with ZKP'}
-              </button>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleZKPVerification}
+                  disabled={zkpVerifying || zkpVerified}
+                  className={`px-3 py-2 rounded ${
+                    zkpVerified
+                      ? 'bg-green-500 text-white'
+                      : zkpVerifying
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                  }`}
+                >
+                  {zkpVerified
+                    ? '✓ ZKP Verified'
+                    : zkpVerifying
+                    ? 'Verifying...'
+                    : 'Verify with ZKP'}
+                </button>
+              </div>
             </div>
-            {user.isExpert && (
-              <div className="mt-2 p-2 bg-green-50 text-green-700 rounded">
-                ✓ Verified as Expert
-              </div>
-            )}
           </div>
         )}
 
