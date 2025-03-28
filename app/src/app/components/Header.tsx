@@ -1,28 +1,18 @@
-import Link from 'next/link';
+'use client';
 
-interface HeaderProps {
-  user: any;
-  onLogout: () => void;
-}
+import { ConnectButton } from './ConnectButton';
 
-export default function Header({ user, onLogout }: HeaderProps) {
+export function Header() {
   return (
     <header className="border-b border-gray-200 bg-white">
-      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <Link href="/" className="text-xl font-bold">
-          Expert Predictions
-        </Link>
-        <div className="flex items-center gap-4">
-          {user ? (
-            <button
-              onClick={onLogout}
-              className="text-sm text-gray-600 hover:text-gray-900"
-            >
-              Sign Out
-            </button>
-          ) : (
-            <div id="google-btn"></div>
-          )}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 items-center justify-between">
+          <div className="flex items-center">
+            <h1 className="text-xl font-bold text-gray-900">Expert Prediction Market</h1>
+          </div>
+          <div className="flex items-center">
+            <ConnectButton />
+          </div>
         </div>
       </div>
     </header>

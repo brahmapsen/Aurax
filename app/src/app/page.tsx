@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { jwtDecode } from 'jwt-decode';
-import Header from './components/Header';
 import Footer from './components/Footer';
 import PredictionCard from './components/PredictionCard';
 import LoginForm from './components/LoginForm';
 import CreateMarketForm from './components/CreateMarketForm';
+import { useAuraxToken } from './hooks/useAuraxToken';
+import { useAccount } from 'wagmi';
+import { toast } from 'react-hot-toast';
 
 const GOOGLE_CLIENT_ID =
   '966100421808-9fcdcovoaq2866o82pglo1v8f2u4q9n0.apps.googleusercontent.com';
@@ -72,6 +74,7 @@ export default function Home() {
   ]);
   const [zkpVerifying, setZkpVerifying] = useState(false);
   const [zkpVerified, setZkpVerified] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const initializeGoogleButton = () => {
     console.log('Initializing Google Sign-In...');
@@ -125,6 +128,10 @@ export default function Home() {
         button.innerHTML = '';
       }
     };
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
   }, []);
 
   const verifyExpertStatus = async (email: string, id_token?: string) => {
@@ -197,10 +204,32 @@ export default function Home() {
   const handleLogout = () => {
     setUser(null);
     setZkpVerified(false);
+    // Reset votes to initial state
     setVotes({
       '1': { yes: 0, no: 0 },
       '2': { yes: 0, no: 0 },
     });
+    // Reset predictions to initial state
+    setPredictions([
+      {
+        id: '1',
+        question: 'Will SpaceX reach Mars by 2025?',
+        description:
+          'This prediction is about SpaceX successfully landing a crewed mission on Mars by the end of 2025.',
+        endDate: '2025-12-31',
+        status: 'open',
+      },
+      {
+        id: '2',
+        question:
+          'Will quantum computers achieve quantum supremacy in cryptography by 2024?',
+        description:
+          'This prediction is about quantum computers demonstrating clear superiority over classical computers in breaking current cryptographic systems.',
+        endDate: '2024-12-31',
+        status: 'open',
+      },
+    ]);
+
     if (window.google?.accounts) {
       window.google.accounts.id.disableAutoSelect();
       setTimeout(() => {
@@ -331,8 +360,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <Header user={user} onLogout={handleLogout} />
-
+      
       <main className="flex-grow container mx-auto px-4 py-8">
         {process.env.NODE_ENV === 'development' && (
           <div className="fixed top-40 right-4 bg-black bg-opacity-75 text-white p-2 text-xs rounded z-50">
@@ -397,9 +425,7 @@ export default function Home() {
         )}
 
         <div className="max-w-4xl mx-auto">
-          {/* Add Create Market button */}
           <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold">Expert Prediction Market</h1>
             {user?.isExpert && (
               <button
                 onClick={() => setShowCreateForm(true)}
@@ -410,7 +436,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Show create form modal */}
           {showCreateForm && (
             <CreateMarketForm
               onSubmit={handleCreateMarket}
@@ -418,7 +443,6 @@ export default function Home() {
             />
           )}
 
-          {/* Predictions section */}
           <div className="space-y-6">
             {predictions.map((prediction) => (
               <PredictionCard
