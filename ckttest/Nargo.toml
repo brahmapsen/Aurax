@@ -1,0 +1,6 @@
+[package]
+name = "ckttest"
+type = "bin"
+authors = [""]
+
+[dependencies]
